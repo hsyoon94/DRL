@@ -10,6 +10,8 @@ from normalized_env import NormalizedEnv
 from evaluator import Evaluator
 from ddpg import DDPG
 from util import *
+from datetime import datetime
+
 
 # gym.undo_logger_setup()
 
@@ -29,8 +31,9 @@ def train(num_iterations, agent, env,  evaluate, validate_steps, output, max_epi
         if step <= args.warmup:
             action = agent.random_action()
         else:
-            action = agent.select_action(observation)
-        
+            # action = agent.select_action(observation)
+            action = agent.select_action_with_dropout(observation)
+
         # env response with next_observation, reward, terminate_info
         observation2, reward, done, info = env.step(action)
         observation2 = deepcopy(observation2)
@@ -45,7 +48,8 @@ def train(num_iterations, agent, env,  evaluate, validate_steps, output, max_epi
         evaluate = None
         # [optional] evaluate
         if evaluate is not None and validate_steps > 0 and step % validate_steps == 0:
-            policy = lambda x: agent.select_action(x, decay_epsilon=False)
+            # policy = lambda x: agent.select_action(x, decay_epsilon=False)
+            policy = lambda x: agent.select_action_with_dropout(x, decay_epsilon=False)
             validate_reward = evaluate(env, policy, debug=False, visualize=False)
             if debug: prYellow('[Evaluate] Step_{:07d}: mean_reward:{}'.format(step, validate_reward))
 
@@ -88,6 +92,10 @@ def test(num_episodes, agent, env, evaluate, model_path, visualize=True, debug=F
 
 if __name__ == "__main__":
 
+    now = datetime.now()
+    now_date = str(now.year)[-2:] + str(now.month).zfill(2) + str(now.day).zfill(2)
+    now_time = str(now.hour).zfill(2) + str(now.minute).zfill(2) + str(now.second).zfill(2)
+
     parser = argparse.ArgumentParser(description='PyTorch on TORCS with Multi-modal')
 
     parser.add_argument('--mode', default='train', type=str, help='support option: train/test')
@@ -111,7 +119,7 @@ if __name__ == "__main__":
     parser.add_argument('--output', default='output', type=str, help='')
     parser.add_argument('--debug', dest='debug', action='store_true')
     parser.add_argument('--init_w', default=0.003, type=float, help='') 
-    parser.add_argument('--train_iter', default=200000, type=int, help='train iters each timestep')
+    parser.add_argument('--train_iter', default=20000000, type=int, help='train iters each timestep')
     parser.add_argument('--epsilon', default=50000, type=int, help='linear decay of exploration policy')
     parser.add_argument('--seed', default=-1, type=int, help='')
     parser.add_argument('--resume', default='default', type=str, help='Resuming model path for testing')
@@ -123,9 +131,14 @@ if __name__ == "__main__":
     # parser.add_argument('--cuda', dest='cuda', action='store_true') # TODO
 
     args = parser.parse_args()
-    args.output = get_output_folder(args.output, args.env)
+    # args.output = get_output_folder(args.output, args.env)
+    args.output = args.output + '/' + now_date + '/' + now_time
+    model_output = get_output_folder(args.output, args.env)
+
     if args.resume == 'default':
         args.resume = 'output/{}-run0'.format(args.env)
+
+    np.savetxt(args.output + '/' + str(args.dropout_n) + '_' + str(args.dropout_p) + '_' + str(args.train_with_dropout) + '.txt', np.array([]), fmt='%4.6f', delimiter=' ')
 
     env = NormalizedEnv(gym.make(args.env))
 
@@ -138,12 +151,16 @@ if __name__ == "__main__":
 
 
     agent = DDPG(nb_states, nb_actions, args)
-    evaluate = Evaluator(args.validate_episodes, 
-        args.validate_steps, args.output, max_episode_length=args.max_episode_length)
+    # evaluate = Evaluator(args.validate_episodes,
+    #     args.validate_steps, args.output, max_episode_length=args.max_episode_length)
+    evaluate = Evaluator(args.validate_episodes,
+        args.validate_steps, model_output, max_episode_length=args.max_episode_length)
 
     if args.mode == 'train':
-        train(args.train_iter, agent, env, evaluate, 
-            args.validate_steps, args.output, max_episode_length=args.max_episode_length, debug=args.debug)
+        # train(args.train_iter, agent, env, evaluate,
+        #     args.validate_steps, args.output, max_episode_length=args.max_episode_length, debug=args.debug)
+        train(args.train_iter, agent, env, evaluate,
+              args.validate_steps, model_output, max_episode_length=args.max_episode_length, debug=args.debug)
 
     elif args.mode == 'test':
         test(args.validate_episodes, agent, env, evaluate, args.resume,

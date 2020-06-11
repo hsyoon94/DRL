@@ -9,6 +9,7 @@ from model import (Actor, Critic)
 from memory import SequentialMemory
 from random_process import OrnsteinUhlenbeckProcess
 from util import *
+import os
 
 # from ipdb import set_trace as debug
 
@@ -22,7 +23,17 @@ class DDPG(object):
 
         self.nb_states = nb_states
         self.nb_actions= nb_actions
-        
+        self.train_with_dropout = args.train_with_dropout
+        self.dropout_p = args.dropout_p
+        self.dropout_n = args.dropout_n
+        self.print_var_count = 0
+        self.action_std = np.array([])
+        self.save_dir = args.output
+
+        print("train_with_dropout : " + str(self.train_with_dropout))
+        print("Dropout p : " + str(self.dropout_p))
+        print("Dropout n : " + str(self.dropout_n))
+
         # Create Actor and Critic Network
         net_cfg_actor = {
             'dropout_n':args.dropout_n,
@@ -142,6 +153,49 @@ class DDPG(object):
         
         self.a_t = action
         return action
+
+    def select_action_with_dropout(self, s_t, decay_epsilon=True):
+        dropout_actions = np.array([])
+        for i in range(self.dropout_n):
+            action = to_numpy(self.actor.forward_with_dropout(to_tensor(np.array([s_t])))).squeeze(0)
+            dropout_actions = np.append(dropout_actions, [action])
+
+        # plt action : without dropout
+        if self.train_with_dropout:
+            plt_action = to_numpy(self.actor.forward_with_dropout(to_tensor(np.array([s_t])))).squeeze(0)
+
+        else:
+            plt_action = to_numpy(self.actor(to_tensor(np.array([s_t])))).squeeze(0)
+            plt_action += self.is_training * max(self.epsilon, 0) * self.random_process.sample()
+
+        if self.print_var_count % 9999 == 0:
+            # print("dropout actions", dropout_actions)
+            # print("dropout actions mean", np.mean(dropout_actions))
+
+            print("dropout actions std", np.std(dropout_actions), "            ", "dir : ", str(self.save_dir))
+            self.action_std = np.append(self.action_std, [np.std(dropout_actions)])
+            np.savetxt(self.save_dir + '/std.txt', self.action_std, fmt='%4.6f', delimiter=' ')
+
+            # print(plt_action)
+
+        # if s_t[0] == -0.5 and s_t[1] == 0:
+        #     print("initial dropout actions std", np.std(dropout_actions), "          ", self.is_training)
+
+        # plr_avg_action = np.float32(np.mean(dropout_actions))
+
+        self.print_var_count = self.print_var_count + 1
+
+        # Delete gaussian random noise
+        # action += self.is_training * max(self.epsilon, 0) * self.random_process.sample()
+        plt_action = np.clip(plt_action, -1., 1.)
+        # plr_avg_action = np.clip(plr_avg_action, -1., 1.)
+
+        if decay_epsilon:
+            self.epsilon -= self.depsilon
+
+        self.a_t = plt_action
+
+        return plt_action
 
     def reset(self, obs):
         self.s_t = obs
