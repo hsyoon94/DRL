@@ -24,18 +24,27 @@ class DDPG(object):
         self.nb_actions= nb_actions
         
         # Create Actor and Critic Network
-        net_cfg = {
+        net_cfg_actor = {
+            'dropout_n':args.dropout_n,
+            'dropout_p':args.dropout_p,
             'hidden1':args.hidden1, 
             'hidden2':args.hidden2, 
             'init_w':args.init_w
         }
-        self.actor = Actor(self.nb_states, self.nb_actions, **net_cfg)
-        self.actor_target = Actor(self.nb_states, self.nb_actions, **net_cfg)
-        self.actor_optim  = Adam(self.actor.parameters(), lr=args.prate)
 
-        self.critic = Critic(self.nb_states, self.nb_actions, **net_cfg)
-        self.critic_target = Critic(self.nb_states, self.nb_actions, **net_cfg)
-        self.critic_optim  = Adam(self.critic.parameters(), lr=args.rate)
+        net_cfg_critic = {
+            'hidden1': args.hidden1,
+            'hidden2': args.hidden2,
+            'init_w': args.init_w
+        }
+
+        self.actor = Actor(self.nb_states, self.nb_actions, **net_cfg_actor)
+        self.actor_target = Actor(self.nb_states, self.nb_actions, **net_cfg_actor)
+        self.actor_optim = Adam(self.actor.parameters(), lr=args.prate)
+
+        self.critic = Critic(self.nb_states, self.nb_actions, **net_cfg_critic)
+        self.critic_target = Critic(self.nb_states, self.nb_actions, **net_cfg_critic)
+        self.critic_optim = Adam(self.critic.parameters(), lr=args.rate)
 
         hard_update(self.actor_target, self.actor) # Make sure target is with the same weight
         hard_update(self.critic_target, self.critic)
