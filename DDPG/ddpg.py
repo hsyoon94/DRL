@@ -15,6 +15,7 @@ import os
 
 criterion = nn.MSELoss()
 
+
 class DDPG(object):
     def __init__(self, nb_states, nb_actions, args):
         
@@ -30,17 +31,19 @@ class DDPG(object):
         self.action_std = np.array([])
         self.save_dir = args.output
 
+        # self.save_file = open(self.save_dir + '/std.txt', "a")
+
         print("train_with_dropout : " + str(self.train_with_dropout))
         print("Dropout p : " + str(self.dropout_p))
         print("Dropout n : " + str(self.dropout_n))
 
         # Create Actor and Critic Network
         net_cfg_actor = {
-            'dropout_n':args.dropout_n,
-            'dropout_p':args.dropout_p,
-            'hidden1':args.hidden1, 
-            'hidden2':args.hidden2, 
-            'init_w':args.init_w
+            'dropout_n' : args.dropout_n,
+            'dropout_p' : args.dropout_p,
+            'hidden1' : args.hidden1,
+            'hidden2' : args.hidden2,
+            'init_w' : args.init_w
         }
 
         net_cfg_critic = {
@@ -57,10 +60,10 @@ class DDPG(object):
         self.critic_target = Critic(self.nb_states, self.nb_actions, **net_cfg_critic)
         self.critic_optim = Adam(self.critic.parameters(), lr=args.rate)
 
-        hard_update(self.actor_target, self.actor) # Make sure target is with the same weight
+        hard_update(self.actor_target, self.actor)
         hard_update(self.critic_target, self.critic)
         
-        #Create replay buffer
+        # Create replay buffer
         self.memory = SequentialMemory(limit=args.rmsize, window_length=args.window_length)
         self.random_process = OrnsteinUhlenbeckProcess(size=nb_actions, theta=args.ou_theta, mu=args.ou_mu, sigma=args.ou_sigma)
 
@@ -77,27 +80,22 @@ class DDPG(object):
         self.is_training = True
 
         # 
-        if USE_CUDA: self.cuda()
+        if USE_CUDA:
+            self.cuda()
 
     def update_policy(self):
         # Sample batch
-        state_batch, action_batch, reward_batch, \
-        next_state_batch, terminal_batch = self.memory.sample_and_split(self.batch_size)
+        state_batch, action_batch, reward_batch, next_state_batch, terminal_batch = self.memory.sample_and_split(self.batch_size)
 
         # Prepare for the target q batch
-        next_q_values = self.critic_target([
-            to_tensor(next_state_batch, volatile=True),
-            self.actor_target(to_tensor(next_state_batch, volatile=True)),
-        ])
-        # next_q_values.volatile=False
+        next_q_values = self.critic_target([to_tensor(next_state_batch, volatile=True),self.actor_target(to_tensor(next_state_batch, volatile=True)),])
 
-        target_q_batch = to_tensor(reward_batch) + \
-            self.discount*to_tensor(terminal_batch.astype(np.float))*next_q_values
+        target_q_batch = to_tensor(reward_batch) + self.discount*to_tensor(terminal_batch.astype(np.float))*next_q_values
 
         # Critic update
         self.critic.zero_grad()
 
-        q_batch = self.critic([ to_tensor(state_batch), to_tensor(action_batch) ])
+        q_batch = self.critic([ to_tensor(state_batch), to_tensor(action_batch)])
         
         value_loss = criterion(q_batch, target_q_batch)
         value_loss.backward()
@@ -106,10 +104,7 @@ class DDPG(object):
         # Actor update
         self.actor.zero_grad()
 
-        policy_loss = -self.critic([
-            to_tensor(state_batch),
-            self.actor(to_tensor(state_batch))
-        ])
+        policy_loss = -self.critic([to_tensor(state_batch), self.actor(to_tensor(state_batch))])
 
         policy_loss = policy_loss.mean()
         policy_loss.backward()
@@ -141,26 +136,23 @@ class DDPG(object):
         self.a_t = action
         return action
 
-    def select_action(self, s_t, decay_epsilon=True):
-        action = to_numpy(
-            self.actor(to_tensor(np.array([s_t])))
-        ).squeeze(0)
-        action += self.is_training*max(self.epsilon, 0)*self.random_process.sample()
-        action = np.clip(action, -1., 1.)
-
-        if decay_epsilon:
-            self.epsilon -= self.depsilon
-        
-        self.a_t = action
-        return action
+    # def select_action(self, s_t, decay_epsilon=True):
+    #     action = to_numpy(self.actor(to_tensor(np.array([s_t])))).squeeze(0)
+    #     action += self.is_training*max(self.epsilon, 0)*self.random_process.sample()
+    #
+    #     if decay_epsilon:
+    #         self.epsilon -= self.depsilon
+    #
+    #     self.a_t = action
+    #     return action
 
     def select_action_with_dropout(self, s_t, decay_epsilon=True):
         dropout_actions = np.array([])
+
         for i in range(self.dropout_n):
             action = to_numpy(self.actor.forward_with_dropout(to_tensor(np.array([s_t])))).squeeze(0)
             dropout_actions = np.append(dropout_actions, [action])
 
-        # plt action : without dropout
         if self.train_with_dropout:
             plt_action = to_numpy(self.actor.forward_with_dropout(to_tensor(np.array([s_t])))).squeeze(0)
 
@@ -168,27 +160,32 @@ class DDPG(object):
             plt_action = to_numpy(self.actor(to_tensor(np.array([s_t])))).squeeze(0)
             plt_action += self.is_training * max(self.epsilon, 0) * self.random_process.sample()
 
-        if self.print_var_count % 9999 == 0:
-            # print("dropout actions", dropout_actions)
-            # print("dropout actions mean", np.mean(dropout_actions))
 
-            print("dropout actions std", np.std(dropout_actions), "            ", "dir : ", str(self.save_dir))
-            self.action_std = np.append(self.action_std, [np.std(dropout_actions)])
-            np.savetxt(self.save_dir + '/std.txt', self.action_std, fmt='%4.6f', delimiter=' ')
+        """
+        UNFIXED RESET POINT
+        """
+        # if self.print_var_count % 111 == 0:
+        #     self.action_std = np.append(self.action_std, [np.std(dropout_actions)])
+        #     np.savetxt(self.save_dir + '/std.txt', self.action_std, fmt='%4.10f', delimiter=' ')
+        #
+        # if self.print_var_count % (999*5) == 0:
+        #     print("dropout actions std", np.std(dropout_actions), "            ", "dir : ", str(self.save_dir))
 
-            # print(plt_action)
+        """
+        FIXED RESET POINT
+        """
+        if s_t[0] == -0.5 and s_t[1] == 0:
+            # print("fixed dropout actions std", np.std(dropout_actions), "            ", "dir : ", str(self.save_dir))
+            # self.action_std = np.append(self.action_std, [np.std(dropout_actions)])
+            # np.savetxt(self.save_dir + '/std.txt', self.action_std, fmt='%4.10f', delimiter=' ')
+            with open(self.save_dir + "/std.txt", "a") as myfile:
+                myfile.write(str(np.std(dropout_actions))+'\n')
 
-        # if s_t[0] == -0.5 and s_t[1] == 0:
-        #     print("initial dropout actions std", np.std(dropout_actions), "          ", self.is_training)
 
-        # plr_avg_action = np.float32(np.mean(dropout_actions))
+        if self.print_var_count % 10000 == 0:
+            print("n :", self.dropout_n, ", p : ", self.dropout_p, ", Save dir : ", str(self.save_dir))
 
         self.print_var_count = self.print_var_count + 1
-
-        # Delete gaussian random noise
-        # action += self.is_training * max(self.epsilon, 0) * self.random_process.sample()
-        plt_action = np.clip(plt_action, -1., 1.)
-        # plr_avg_action = np.clip(plr_avg_action, -1., 1.)
 
         if decay_epsilon:
             self.epsilon -= self.depsilon
@@ -196,6 +193,7 @@ class DDPG(object):
         self.a_t = plt_action
 
         return plt_action
+
 
     def reset(self, obs):
         self.s_t = obs
@@ -223,7 +221,7 @@ class DDPG(object):
             '{}/critic.pkl'.format(output)
         )
 
-    def seed(self,s):
+    def seed(self, s):
         torch.manual_seed(s)
         if USE_CUDA:
             torch.cuda.manual_seed(s)

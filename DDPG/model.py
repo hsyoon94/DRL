@@ -7,14 +7,15 @@ import torch.nn.functional as F
 
 # from ipdb import set_trace as debug
 
+
 def fanin_init(size, fanin=None):
     fanin = fanin or size[0]
     v = 1. / np.sqrt(fanin)
     return torch.Tensor(size).uniform_(-v, v)
 
+
 class Actor(nn.Module):
     def __init__(self, nb_states, nb_actions, dropout_n=3, dropout_p=0.2, hidden1=400, hidden2=300, init_w=3e-3):
-    # def __init__(self, nb_states, nb_actions, hidden1=400, hidden2=300, init_w=3e-3):
         super(Actor, self).__init__()
         self.fc1 = nn.Linear(nb_states, hidden1)
         self.fc1_dropout = nn.Dropout(p=dropout_p)
@@ -39,19 +40,29 @@ class Actor(nn.Module):
         out = self.relu(out)
         out = self.fc3(out)
         out = self.tanh(out)
+        # out = self.fc1(x)
+        # out = self.relu(out)
+        # out = self.fc1_dropout(out)
+        # out = self.fc2(out)
+        # out = self.relu(out)
+        # out = self.fc2_dropout(out)
+        # out = self.fc3(out)
+        # out = self.tanh(out)
+        # out = self.fc3_dropout(out)
         return out
 
     def forward_with_dropout(self, x):
         out = self.fc1(x)
+        out = self.relu(out)
         out = self.fc1_dropout(out)
-        out = self.relu(out)
         out = self.fc2(out)
-        out = self.fc2_dropout(out)
         out = self.relu(out)
+        out = self.fc2_dropout(out)
         out = self.fc3(out)
-        out = self.fc3_dropout(out)
         out = self.tanh(out)
+        out = self.fc3_dropout(out)
         return out
+
 
 class Critic(nn.Module):
     def __init__(self, nb_states, nb_actions, hidden1=400, hidden2=300, init_w=3e-3):

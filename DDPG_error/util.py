@@ -40,9 +40,11 @@ def to_numpy(var):
 #         return Variable(torch.from_numpy(ndarray), requires_grad=requires_grad).type(dtype)
 
 def to_tensor(ndarray, volatile=False, requires_grad=False, dtype=FLOAT):
-    return Variable(
-        torch.from_numpy(ndarray), volatile=volatile, requires_grad=requires_grad
-    ).type(dtype)
+    if volatile:
+        with torch.no_grad():
+            return Variable(torch.from_numpy(ndarray)).type(dtype)
+    else:
+        return Variable(torch.from_numpy(ndarray), requires_grad=requires_grad).type(dtype)
 
 
 def soft_update(target, source, tau):
