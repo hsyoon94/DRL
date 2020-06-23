@@ -155,32 +155,32 @@ class DDPG(object):
 
         if self.train_with_dropout:
             plt_action = to_numpy(self.actor.forward_with_dropout(to_tensor(np.array([s_t])))).squeeze(0)
+            plt_action += self.is_training * max(self.epsilon, 0) * self.random_process.sample()
 
         else:
             plt_action = to_numpy(self.actor(to_tensor(np.array([s_t])))).squeeze(0)
             plt_action += self.is_training * max(self.epsilon, 0) * self.random_process.sample()
 
-
         """
         UNFIXED RESET POINT
         """
-        # if self.print_var_count % 111 == 0:
-        #     self.action_std = np.append(self.action_std, [np.std(dropout_actions)])
-        #     np.savetxt(self.save_dir + '/std.txt', self.action_std, fmt='%4.10f', delimiter=' ')
+        # if self.print_var_count % 1000 == 0:
+        #     # self.action_std = np.append(self.action_std, [np.std(dropout_actions)])
+        #     with open(self.save_dir + "/std.txt", "a") as myfile:
+        #         myfile.write(str(np.std(dropout_actions))+'\n')
         #
-        # if self.print_var_count % (999*5) == 0:
+        # if self.print_var_count % (1000*5) == 0:
         #     print("dropout actions std", np.std(dropout_actions), "            ", "dir : ", str(self.save_dir))
 
         """
         FIXED RESET POINT
         """
         if s_t[0] == -0.5 and s_t[1] == 0:
-            # print("fixed dropout actions std", np.std(dropout_actions), "            ", "dir : ", str(self.save_dir))
-            # self.action_std = np.append(self.action_std, [np.std(dropout_actions)])
-            # np.savetxt(self.save_dir + '/std.txt', self.action_std, fmt='%4.10f', delimiter=' ')
+            print("fixed dropout actions std", np.std(dropout_actions), "            ", "dir : ", str(self.save_dir))
+            self.action_std = np.append(self.action_std, [np.std(dropout_actions)])
+            np.savetxt(self.save_dir + '/std.txt', self.action_std, fmt='%4.10f', delimiter=' ')
             with open(self.save_dir + "/std.txt", "a") as myfile:
                 myfile.write(str(np.std(dropout_actions))+'\n')
-
 
         if self.print_var_count % 10000 == 0:
             print("n :", self.dropout_n, ", p : ", self.dropout_p, ", Save dir : ", str(self.save_dir))
@@ -190,10 +190,13 @@ class DDPG(object):
         if decay_epsilon:
             self.epsilon -= self.depsilon
 
+        # dropout_action = np.array([np.mean(dropout_actions)])
+
+        # self.a_t = plt_action
         self.a_t = plt_action
 
+        # return plt_action
         return plt_action
-
 
     def reset(self, obs):
         self.s_t = obs
@@ -211,7 +214,7 @@ class DDPG(object):
         )
 
 
-    def save_model(self,output):
+    def save_model(self, output):
         torch.save(
             self.actor.state_dict(),
             '{}/actor.pkl'.format(output)
