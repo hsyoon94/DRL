@@ -10,6 +10,7 @@ from memory import SequentialMemory
 from random_process import OrnsteinUhlenbeckProcess
 from util import *
 import os
+import os
 
 # from ipdb import set_trace as debug
 
@@ -30,6 +31,7 @@ class DDPG(object):
         self.print_var_count = 0
         self.action_std = np.array([])
         self.save_dir = args.output
+        self.episode = 0
 
         # self.save_file = open(self.save_dir + '/std.txt', "a")
 
@@ -96,17 +98,22 @@ class DDPG(object):
         self.critic.zero_grad()
 
         q_batch = self.critic([ to_tensor(state_batch), to_tensor(action_batch)])
-        
+
+        # TODO : Add uncertainty term from aleatoric certainty term of critic network (Add uncertainty term in criterion)
         value_loss = criterion(q_batch, target_q_batch)
+
         value_loss.backward()
         self.critic_optim.step()
 
         # Actor update
         self.actor.zero_grad()
 
+        # policy loss
+        # TODO : Add certainty term from aleatoric certainty term of policy network
         policy_loss = -self.critic([to_tensor(state_batch), self.actor(to_tensor(state_batch))])
-
         policy_loss = policy_loss.mean()
+        # policy_loss = policy_loss.mean() + actor_certainty
+
         policy_loss.backward()
         self.actor_optim.step()
 
@@ -149,9 +156,10 @@ class DDPG(object):
     def select_action_with_dropout(self, s_t, decay_epsilon=True):
         dropout_actions = np.array([])
 
-        for i in range(self.dropout_n):
-            action = to_numpy(self.actor.forward_with_dropout(to_tensor(np.array([s_t])))).squeeze(0)
-            dropout_actions = np.append(dropout_actions, [action])
+        with torch.no_grad():
+            for i in range(self.dropout_n):
+                action = to_numpy(self.actor.forward_with_dropout(to_tensor(np.array([s_t])))).squeeze(0)
+                dropout_actions = np.append(dropout_actions, [action])
 
         if self.train_with_dropout:
             plt_action = to_numpy(self.actor.forward_with_dropout(to_tensor(np.array([s_t])))).squeeze(0)
@@ -162,28 +170,41 @@ class DDPG(object):
             plt_action += self.is_training * max(self.epsilon, 0) * self.random_process.sample()
 
         """
-        UNFIXED RESET POINT
+        UNFIXED RESET POINT for Mujoco
         """
-        # if self.print_var_count % 1000 == 0:
-        #     # self.action_std = np.append(self.action_std, [np.std(dropout_actions)])
-        #     with open(self.save_dir + "/std.txt", "a") as myfile:
-        #         myfile.write(str(np.std(dropout_actions))+'\n')
-        #
-        # if self.print_var_count % (1000*5) == 0:
-        #     print("dropout actions std", np.std(dropout_actions), "            ", "dir : ", str(self.save_dir))
+        if self.print_var_count != 0 and (self.print_var_count + 1) % 999 == 0:
+            # self.action_std = np.append(self.action_std, [np.std(dropout_actions)])
 
-        """
-        FIXED RESET POINT
-        """
-        if s_t[0] == -0.5 and s_t[1] == 0:
-            print("fixed dropout actions std", np.std(dropout_actions), "            ", "dir : ", str(self.save_dir))
-            self.action_std = np.append(self.action_std, [np.std(dropout_actions)])
-            np.savetxt(self.save_dir + '/std.txt', self.action_std, fmt='%4.10f', delimiter=' ')
             with open(self.save_dir + "/std.txt", "a") as myfile:
                 myfile.write(str(np.std(dropout_actions))+'\n')
+            with open(self.save_dir + "/mean.txt", "a") as myfile:
+                myfile.write(str(np.mean(dropout_actions))+'\n')
 
-        if self.print_var_count % 10000 == 0:
-            print("n :", self.dropout_n, ", p : ", self.dropout_p, ", Save dir : ", str(self.save_dir))
+
+        if self.print_var_count % (1000*5) == 0:
+            print("dropout actions std", np.std(dropout_actions), "            ", "dir : ", str(self.save_dir))
+
+        """
+        FIXED RESET POINT for MCC
+        """
+        # if s_t[0] == -0.5 and s_t[1] == 0:
+        #     # print("fixed dropout actions std", np.std(dropout_actions), "            ", "dir : ", str(self.save_dir))
+        #     self.action_std = np.append(self.action_std, [np.std(dropout_actions)])
+        #     # np.savetxt(self.save_dir + '/std.txt', self.action_std, fmt='%4.10f', delimiter=' ')
+        #     with open(self.save_dir + "/std.txt", "a") as myfile:
+        #         myfile.write(str(np.std(dropout_actions))+'\n')
+        #     with open(self.save_dir + "/mean.txt", "a") as myfile:
+        #         myfile.write(str(np.mean(dropout_actions))+'\n')
+
+        if not (os.path.isdir(self.save_dir + "/episode/" + str(self.episode))):
+            os.makedirs(os.path.join(self.save_dir + "/episode/" + str(self.episode)))
+
+        self.action_std = np.append(self.action_std, [np.std(dropout_actions)])
+        with open(self.save_dir + "/episode/" + str(self.episode) + "/std.txt", "a") as myfile:
+            myfile.write(str(np.std(dropout_actions)) + '\n')
+
+        with open(self.save_dir + "/episode/" + str(self.episode) + "/mean.txt", "a") as myfile:
+            myfile.write(str(np.mean(dropout_actions)) + '\n')
 
         self.print_var_count = self.print_var_count + 1
 
@@ -192,15 +213,15 @@ class DDPG(object):
 
         # dropout_action = np.array([np.mean(dropout_actions)])
 
-        # self.a_t = plt_action
         self.a_t = plt_action
 
-        # return plt_action
         return plt_action
 
     def reset(self, obs):
         self.s_t = obs
+        # print("initial obs", self.s_t)
         self.random_process.reset_states()
+        # print("initial obs2", self.s_t)
 
     def load_weights(self, output):
         if output is None: return

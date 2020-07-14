@@ -40,15 +40,6 @@ class Actor(nn.Module):
         out = self.relu(out)
         out = self.fc3(out)
         out = self.tanh(out)
-        # out = self.fc1(x)
-        # out = self.relu(out)
-        # out = self.fc1_dropout(out)
-        # out = self.fc2(out)
-        # out = self.relu(out)
-        # out = self.fc2_dropout(out)
-        # out = self.fc3(out)
-        # out = self.tanh(out)
-        # out = self.fc3_dropout(out)
         return out
 
     def forward_with_dropout(self, x):
