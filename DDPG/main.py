@@ -10,11 +10,11 @@ import os
 from normalized_env import NormalizedEnv
 from evaluator import Evaluator
 from ddpg import DDPG
+from uaddpg import UADDPG
 from util import *
 from datetime import datetime
 
 
-# gym.undo_logger_setup()
 
 def train(num_iterations, agent, env,  evaluate, validate_steps, output, reward_save_dir, dropout_n, dropout_p, max_episode_length=None, debug=False):
 

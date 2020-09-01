@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 from torch.optim import Adam
 
-from model import (Actor, Critic)
+from model import (Actor, Critic, UAActor, UACritic)
 from memory import SequentialMemory
 from random_process import OrnsteinUhlenbeckProcess
 from util import *
@@ -17,7 +17,13 @@ import os
 criterion = nn.MSELoss()
 
 
-class DDPG(object):
+def AULoss(ground_truth, prediction, a_std):
+    auloss = nn.MSELoss(ground_truth, prediction) / (2 * torch.square(a_std)) + torch.square(torch.log(a_std)) / 2
+
+    return auloss
+
+
+class UADDPG(object):
     def __init__(self, nb_states, nb_actions, args):
         
         if args.seed > 0:
@@ -92,8 +98,9 @@ class DDPG(object):
         state_batch, action_batch, reward_batch, next_state_batch, terminal_batch = self.memory.sample_and_split(self.batch_size)
 
         # Prepare for the target q batch
-        # TODO : Also apply epistemic and aleatoric uncertainty to both actor and critic target network
-        next_q_values = self.critic_target([to_tensor(next_state_batch, volatile=True),self.actor_target(to_tensor(next_state_batch, volatile=True)),])
+        # TODO : (1) Also apply epistemic and aleatoric uncertainty to both actor and critic target network
+        # TOOD : (2) Is it proper to apply epistemic uncertainty to target network? If then, how to apply? Which network to choose for target? Let's think more about it after July.
+        next_q_values = self.critic_target([to_tensor(next_state_batch, volatile=True), self.actor_target(to_tensor(next_state_batch, volatile=True))])[:-1]  # x : next_state_batch, a : self.actor_target(next_state_batch)
         target_q_batch = to_tensor(reward_batch) + self.discount*to_tensor(terminal_batch.astype(np.float))*next_q_values
 
         #########################
@@ -101,11 +108,14 @@ class DDPG(object):
         #########################
         self.critic.zero_grad()
 
-        # TODO : Add epistemic uncertainty for critic network
-        q_batch = self.critic([ to_tensor(state_batch), to_tensor(action_batch)])
+        # TODO : (Completed) Add epistemic uncertainty for critic network
+        q_batch = self.critic([to_tensor(state_batch), to_tensor(action_batch)])
+        # q_batch_mean, q_batch_var = select_q_with_dropout(state_batch, action_batch)
+        # q_batch = self.critic.foward_with_dropout([to_tensor(state_batch), to_tensor(action_batch)])
 
-        # TODO : Add aleatoric uncertainty term from aleatoric uncertainty output of critic network (Add uncertainty term in criterion)
+        # TODO : (Completed) Add aleatoric uncertainty term from aleatoric uncertainty output of critic network (Add aleatoric uncertainty term in criterion)
         value_loss = criterion(q_batch, target_q_batch)
+        # value_loss = AULoss(q_batch, target_q_batch)
 
         value_loss.backward()
         self.critic_optim.step()
@@ -116,10 +126,10 @@ class DDPG(object):
         self.actor.zero_grad()
 
         # policy loss
-        # TODO : Add epistemic certainty term from aleatoric certainty output of policy network
+        # TODO : (Completed) Add epistemic certainty term from aleatoric certainty output of policy network
         policy_loss = -self.critic([to_tensor(state_batch), self.actor(to_tensor(state_batch))])
         policy_loss = policy_loss.mean()
-        # policy_loss = policy_loss.mean() + actor_certainty
+        # policy_loss = policy_loss.mean() + 1 / self.actor(to_tensor(state_batch)[-1])
 
         policy_loss.backward()
         self.actor_optim.step()
@@ -161,6 +171,21 @@ class DDPG(object):
     #
     #     self.a_t = action
     #     return action
+
+
+    def select_q_with_dropout(self, s_t, a_t):
+        dropout_qs = np.arrary([])
+
+        with torch.no_grad():
+            for i in range(self.dropout_n):
+                q_batch = to_numpy(self.critic.forward_with_dropout([to_tensor(s_t), to_tensor(a_t)]).squeeze(0)[:-1]) # ignore aleatoric variance term
+                dropout_qs = np.append(dropout_qs, [q_batch])
+
+        q_mean = torch.mean(dropout_qs)
+        q_var = torch.var(dropout_qs)
+
+        return q_mean, q_var
+
 
     def select_action_with_dropout(self, s_t, decay_epsilon=True):
         dropout_actions = np.array([])
@@ -228,9 +253,7 @@ class DDPG(object):
 
     def reset(self, obs):
         self.s_t = obs
-        # print("initial obs", self.s_t)
         self.random_process.reset_states()
-        # print("initial obs2", self.s_t)
 
     def load_weights(self, output):
         if output is None: return
@@ -242,7 +265,6 @@ class DDPG(object):
         self.critic.load_state_dict(
             torch.load('{}/critic.pkl'.format(output))
         )
-
 
     def save_model(self, output):
         torch.save(
