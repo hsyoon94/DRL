@@ -16,7 +16,7 @@ from datetime import datetime
 
 
 
-def train(num_iterations, agent, env,  evaluate, validate_steps, output, reward_save_dir, dropout_n, dropout_p, max_episode_length=None, debug=False):
+def train(num_iterations, agent, env,  evaluate, validate_steps, output, reward_save_dir, max_episode_length=None, debug=False):
 
     agent.is_training = True
     step = episode = episode_steps = 0
@@ -34,8 +34,8 @@ def train(num_iterations, agent, env,  evaluate, validate_steps, output, reward_
         if step <= args.warmup:
             action = agent.random_action()
         else:
-            # action = agent.select_action(observation)
-            action = agent.select_action_with_dropout(observation)
+            # action = agent.select_action_with_dropout(observation)
+            action = agent.select_action(observation)
 
         # env response with next_observation, reward, terminate_info
         observation2, reward, done, info = env.step(action)
@@ -51,8 +51,8 @@ def train(num_iterations, agent, env,  evaluate, validate_steps, output, reward_
         evaluate = None
         # [optional] evaluate
         if evaluate is not None and validate_steps > 0 and step % validate_steps == 0:
-            policy = lambda x: agent.select_action_with_dropout(x, decay_epsilon=False)
-            # policy = lambda x: agent.select_action_with_dropout(x, decay_epsilon=True)
+            # policy = lambda x: agent.select_action_with_dropout(x, decay_epsilon=False)
+            policy = lambda x: agent.select_action(x, decay_epsilon=False)
             validate_reward = evaluate(env, policy, debug=False, visualize=False)
 
             if debug:
@@ -68,17 +68,19 @@ def train(num_iterations, agent, env,  evaluate, validate_steps, output, reward_
         observation = deepcopy(observation2)
 
         if done:  # end of episode
-            if debug:
-                agent.episode = agent.episode + 1
-                prRed('#{}: episode_reward:{} steps:{} dropout_n:{} dropout_p:{} dir:{}'.format(episode, episode_reward, step, dropout_n, dropout_p, reward_save_dir))
-                with open(reward_save_dir + "/reward.txt", "a") as myfile:
-                    myfile.write(str(episode_reward) + '\n')
+            # if debug:
+            #     agent.episode = agent.episode + 1
+            #     # prRed('#{}: episode_reward:{} steps:{} dropout_n:{} dropout_p:{} dir:{}'.format(episode, episode_reward, step, dropout_n, dropout_p, reward_save_dir))
+            #     with open(reward_save_dir + "/reward.txt", "a") as myfile:
+            #         myfile.write(str(episode_reward) + '\n')
+            #
+            #     os.mkdir(output + "/" + str(episode) + "_" + str(int(episode_reward)))
+            #     agent.save_model(output + "/" + str(episode) + "_" + str(int(episode_reward)))
+            #
+            # # agent.memory.append(observation, agent.select_action(observation), 0., False)
+            # agent.memory.append(observation, agent.select_action_with_dropout(observation), 0., False)
 
-                os.mkdir(output + "/" + str(episode) + "_" + str(int(episode_reward)))
-                agent.save_model(output + "/" + str(episode) + "_" + str(int(episode_reward)))
-
-            # agent.memory.append(observation, agent.select_action(observation), 0., False)
-            agent.memory.append(observation, agent.select_action_with_dropout(observation), 0., False)
+            prRed('#{}: episode_reward:{} steps:{} dir:{}'.format(episode, episode_reward, step, reward_save_dir))
 
             # reset
             observation = None
@@ -128,17 +130,23 @@ if __name__ == "__main__":
     parser.add_argument('--validate_steps', default=2000, type=int, help='how many steps to perform a validate experiment')
     parser.add_argument('--output', default='output', type=str, help='')
     parser.add_argument('--debug', dest='debug', action='store_true')
-    parser.add_argument('--init_w', default=0.003, type=float, help='') 
+    parser.add_argument('--init_w', default=0.003, type=float, help='')
     parser.add_argument('--train_iter', default=3000000, type=int, help='train iters each timestep')
     parser.add_argument('--epsilon', default=50000, type=int, help='linear decay of exploration policy')
     parser.add_argument('--seed', default=-1, type=int, help='')
     parser.add_argument('--resume', default='default', type=str, help='Resuming model path for testing')
-    parser.add_argument('--dropout_n', default=3, type=int, help='')
-    parser.add_argument('--dropout_p', default=0.2, type=float, help='Bernoulli dropout probability')
-    parser.add_argument('--train_with_dropout', action='store_true', help='is_training')
 
-    # parser.add_argument('--l2norm', default=0.01, type=float, help='l2 weight decay') # TODO
-    # parser.add_argument('--cuda', dest='cuda', action='store_true') # TODO
+    parser.add_argument('--dropout_n_actor', default=3, type=int, help='')
+    parser.add_argument('--dropout_n_critic', default=3, type=int, help='')
+    parser.add_argument('--dropout_p_actor', default=0.2, type=float, help='Bernoulli dropout probability')
+    parser.add_argument('--dropout_p_critic', default=0.2, type=float, help='Bernoulli dropout probability')
+
+    parser.add_argument('--epistemic_actor', action='store_true', help='true/false for epistemic uncertainty aware actor')
+    parser.add_argument('--epistemic_critic', action='store_true', help='true/false for epistemic uncertainty aware critic')
+
+    parser.add_argument('--aleatoric_actor', action='store_true', help='true/false for aleatoric uncertainty aware actor')
+    parser.add_argument('--aleatoric_critic', action='store_true', help='true/false for aleatoric uncertainty aware critic')
+
 
     args = parser.parse_args()
     # args.output = get_output_folder(args.output, args.env)
@@ -149,7 +157,13 @@ if __name__ == "__main__":
         args.resume = 'output/{}-run0'.format(args.env)
 
     # File configs save
-    np.savetxt(args.output + '/' + str(args.dropout_n) + '_' + str(args.dropout_p) + '_' + str(args.train_with_dropout) + '.txt', np.array([]), fmt='%4.6f', delimiter=' ')
+    np.savetxt(args.output + '/' + str(args.dropout_n_actor) + '_' + str(args.dropout_p_actor)+ '_'\
+               + str(args.dropout_n_critic)+ '_' + str(args.dropout_p_critic) \
+               + '_' + str(args.aleatoric_actor) \
+               + '_' + str(args.aleatoric_critic) \
+               + '_' + str(args.epistemic_actor) \
+               + '_' + str(args.epistemic_critic) \
+               + '.txt', np.array([]), fmt='%4.6f', delimiter=' ')
 
     env = NormalizedEnv(gym.make(args.env))
 
@@ -167,7 +181,7 @@ if __name__ == "__main__":
     if args.mode == 'train':
         # train(args.train_iter, agent, env, evaluate,
         #     args.validate_steps, args.output, max_episode_length=args.max_episode_length, debug=args.debug)
-        train(args.train_iter, agent, env, evaluate, args.validate_steps, model_output, args.output, args.dropout_n, args.dropout_p, max_episode_length=args.max_episode_length, debug=args.debug)
+        train(args.train_iter, agent, env, evaluate, args.validate_steps, model_output, args.output, max_episode_length=args.max_episode_length, debug=args.debug)
 
     elif args.mode == 'test':
         test(args.validate_episodes, agent, env, evaluate, args.resume, visualize=True, debug=args.debug)
