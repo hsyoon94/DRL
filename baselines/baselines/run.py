@@ -49,6 +49,7 @@ _game_envs['retro'] = {
     'SpaceInvaders-Snes',
 }
 
+print("\n\n\n\n\n\n\n hello \n\n\n\n\n\n")
 
 def train(args, extra_args):
     env_type, env_id = get_env_type(args)

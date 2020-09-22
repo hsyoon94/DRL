@@ -2,8 +2,8 @@ import sys
 import numpy as np
 
 from tqdm import tqdm
-from .actor import Actor
-from .critic import Critic
+from .uaactor import UAActor
+from .uacritic import UACritic
 from utils.stats import gather_stats
 from utils.networks import tfSummary, OrnsteinUhlenbeckProcess
 from utils.memory_buffer import MemoryBuffer
@@ -21,10 +21,21 @@ class UADDPG:
         self.env_dim = (k,) + env_dim
         self.gamma = gamma
         self.lr = lr
+
+        self.aware_aleatoric = False
+        self.aware_epistemic = False
+        self.dropout_n = 3
+        self.dropout_p = 0.2
+
         # Create actor and critic networks
-        self.actor = Actor(self.env_dim, act_dim, act_range, 0.1 * lr, tau)
-        self.critic = Critic(self.env_dim, act_dim, lr, tau)
+
+        self.actor = UAActor(self.env_dim, act_dim, act_range, 0.1 * lr, tau, self.aware_aleatoric, self.aware_epistemic, self.dropout_n, self.dropout_p)
+        self.critic = UACritic(self.env_dim, act_dim, lr, tau)
         self.buffer = MemoryBuffer(buffer_size)
+        self.aware_aleatoric = False
+        self.aware_epistemic = False
+        self.dropout_n = 3
+        self.dropout_p = 0.1
 
     def policy_action(self, s):
         """ Use the actor to predict value
