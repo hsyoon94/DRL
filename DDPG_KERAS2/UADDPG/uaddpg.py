@@ -92,6 +92,7 @@ class UADDPG:
                 if args.render: env.render()
                 # env.render()
                 # Actor picks an action (following the deterministic policy)
+
                 a = self.policy_action(old_state)
                 # Clip continuous values to be valid w.r.t. environment
                 a = np.clip(a+noise.generate(time), -self.act_range, self.act_range)
