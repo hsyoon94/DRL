@@ -4,6 +4,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from contrib import adf
+print(adf.__file__)
 
 
 def fanin_init(size, fanin=None):
@@ -42,6 +43,7 @@ class Actor(nn.Module):
 class Critic(nn.Module):
     def __init__(self, nb_states, nb_actions, hidden1=400, hidden2=300, init_w=3e-3):
         super(Critic, self).__init__()
+        self.nb_states = nb_states
         self.fc1 = nn.Linear(nb_states, hidden1)
         self.fc2 = nn.Linear(hidden1 + nb_actions, hidden2)
         self.fc3 = nn.Linear(hidden2, 1)
@@ -57,52 +59,63 @@ class Critic(nn.Module):
         x, a = xs
         out = self.fc1(x)
         out = self.relu(out)
-        # debug()
-        out = self.fc2(torch.cat([out, a], 1))
+
+        try:
+            out = self.fc2(torch.cat([out, a], 1))
+        except TypeError:
+            out = self.fc2(torch.cat([out, a[0]], 1))
+
         out = self.relu(out)
         out = self.fc3(out)
         return out
 
 
 class UAActor(nn.Module):
-    def __init__(self, block, num_blocks, num_classes=10, p=0.2, noise_variance=1e-3, min_variance=1e-3, initialize_msra=False):
+    def __init__(self, nb_states, nb_actions, hidden1=400, hidden2=300, init_w=3e-3):
         super(UAActor, self).__init__()
 
-        self.keep_variance_fn = lambda x: keep_variance(x, min_variance=min_variance)
-        self._noise_variance = noise_variance
+        self.min_variance = 1e-3
 
-        self.layer1 = self._make_layer(block, 64, num_blocks[0], stride=1, p=p, keep_variance_fn=self.keep_variance_fn)
-        self.layer2 = self._make_layer(block, 128, num_blocks[1], stride=2, p=p, keep_variance_fn=self.keep_variance_fn)
-        self.layer3 = self._make_layer(block, 256, num_blocks[2], stride=2, p=p, keep_variance_fn=self.keep_variance_fn)
+        self.keep_variance_fn = lambda x: keep_variance(x, min_variance=self.min_variance)
+        self._noise_variance = 1e-3
+        self.dropout_p = 0.2
+        self.dropout_n = 3
 
-        self.linear = adf.Linear(512 * block.expansion, num_classes, keep_variance_fn=self.keep_variance_fn)
-        self.AvgPool2d = adf.AvgPool2d(keep_variance_fn=self.keep_variance_fn)
+        self.linear1 = adf.Linear(nb_states, hidden1, keep_variance_fn=self.keep_variance_fn)
+        self.linear2 = adf.Linear(hidden1, hidden2, keep_variance_fn=self.keep_variance_fn)
+        self.linear3 = adf.Linear(hidden2, nb_actions, keep_variance_fn=self.keep_variance_fn)
 
-        self.dropout = adf.Dropout(p=p, keep_variance_fn=self.keep_variance_fn)
+        self.ReLU = adf.ReLU(keep_variance_fn=self.keep_variance_fn)
 
-    def _make_layer(self, block, planes, num_blocks, stride, p=0.2, keep_variance_fn=None):
-        strides = [stride] + [1] * (num_blocks - 1)
-        layers = []
-        for stride in strides:
-            layers.append(block(self.in_planes, planes, stride, p=p, keep_variance_fn=self.keep_variance_fn))
-            self.in_planes = planes * block.expansion
-        return adf.Sequential(*layers)
+        self.dropout = adf.Dropout(p=self.dropout_p, keep_variance_fn=self.keep_variance_fn)
+
+        self.init_weights(init_w)
+
+    def init_weights(self, init_w):
+        self.linear1.weight.data = fanin_init(self.linear1.weight.data.size())
+        self.linear2.weight.data = fanin_init(self.linear2.weight.data.size())
+        self.linear3.weight.data.uniform_(-init_w, init_w)
 
     def forward(self, x):
         inputs_mean = x
-        inputs_variance = torch.zeros_like(inputs_mean) + self._noise_variance
-        x = inputs_mean, inputs_variance
+        inputs_var = torch.zeros_like(inputs_mean) + self._noise_variance
 
-        out = self.dropout(*self.ReLU(*self.bn1(*self.conv1(*x))))
-        out = self.layer1(*out)
-        out = self.layer2(*out)
-        out = self.layer3(*out)
-        out = self.layer4(*out)
-        out = self.AvgPool2d(*out, 4)
-        out_mean = out[0].view(out[0].size(0), -1)  # Flatten
-        out_var = out[1].view(out[1].size(0), -1)
-        out = out_mean, out_var
-        out = self.linear(*out)
+        inputs_mean_nor = (inputs_mean - torch.min(inputs_mean)) / (torch.max(inputs_mean)- torch.min(inputs_mean))
+
+        tmp_input = inputs_mean_nor+0.1, inputs_var
+        for i in range(self.dropout_n):
+            out = self.linear1(*tmp_input)
+            out = self.ReLU(*out)
+
+            out = self.dropout(*out)
+            out = self.linear2(*out)
+
+            out = self.ReLU(*out)
+            out = self.dropout(*out)
+            out = self.linear3(*out)
+
+            print("plr", i, out[0], out[1])
+
         return out
 
 # class UAActor(nn.Module):

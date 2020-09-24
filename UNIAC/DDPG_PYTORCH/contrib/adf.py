@@ -85,7 +85,7 @@ class ReLU(nn.Module):
                            + features_mean * features_stddev * pdf - outputs_mean ** 2
         if self._keep_variance_fn is not None:
             outputs_variance = self._keep_variance_fn(outputs_variance)
-        return outputs_mean, outputs_variance
+        return torch.clamp(outputs_mean, min=-10e5, max=10e5), torch.clamp(outputs_variance, min=-10e5, max=10e5)
 
 
 class LeakyReLU(nn.Module):
@@ -138,12 +138,12 @@ class Dropout(nn.Module):
             
             if self._keep_variance_fn is not None:
                 outputs_variance = self._keep_variance_fn(outputs_variance)
-            return outputs_mean, outputs_variance
+            return torch.clamp(outputs_mean, min=-10e5, max=10e5), torch.clamp(outputs_variance, min=-10e5, max=10e5)
         
         outputs_variance = inputs_variance
         if self._keep_variance_fn is not None:
             outputs_variance = self._keep_variance_fn(outputs_variance)
-        return inputs_mean, outputs_variance
+        return torch.clam(inputs_mean, min=-10e5, max=10e5), torch.clamp(outputs_variance, min=-10e5, max=10e5)
 
 
 class MaxPool2d(nn.Module):
@@ -203,10 +203,12 @@ class Linear(nn.Module):
 
     def forward(self, inputs_mean, inputs_variance):
         outputs_mean = F.linear(inputs_mean, self.weight, self.bias)
+
         outputs_variance = F.linear(inputs_variance, self.weight**2, None)
         if self._keep_variance_fn is not None:
             outputs_variance = self._keep_variance_fn(outputs_variance)
-        return outputs_mean, outputs_variance
+
+        return torch.clamp(outputs_mean, min=-10e5,max=10e5), torch.clamp(outputs_variance,min=-10e5, max=10e5)
 
 class BatchNorm2d(nn.Module):
     _version = 2

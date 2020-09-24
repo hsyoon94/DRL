@@ -33,7 +33,8 @@ class DDPG(object):
             'hidden2': args.hidden2,
             'init_w': args.init_w
         }
-        self.actor = Actor(self.nb_states, self.nb_actions, **net_cfg)
+        self.actor = UAActor(self.nb_states, self.nb_actions, **net_cfg)
+
         self.actor_target = Actor(self.nb_states, self.nb_actions, **net_cfg)
         self.actor_optim = Adam(self.actor.parameters(), lr=args.prate)
 
@@ -66,13 +67,15 @@ class DDPG(object):
 
     def update_policy(self):
         # Sample batch
-        state_batch, action_batch, reward_batch, \
-        next_state_batch, terminal_batch = self.memory.sample_and_split(self.batch_size)
+        state_batch, action_batch, reward_batch, next_state_batch, terminal_batch = self.memory.sample_and_split(self.batch_size)
 
-        # Prepare for the target q batch
+        # Prepare for the target q
+
+        # print("input x in xs", to_tensor(next_state_batch, volatile=True))
+        # print("input s in xs", self.actor_target(to_tensor(next_state_batch, volatile=True)))
+
         next_q_values = self.critic_target([
-            to_tensor(next_state_batch, volatile=True),
-            self.actor_target(to_tensor(next_state_batch, volatile=True)),
+            to_tensor(next_state_batch, volatile=True), self.actor_target(to_tensor(next_state_batch, volatile=True)),
         ])
         next_q_values.volatile = False
 
@@ -127,9 +130,15 @@ class DDPG(object):
         return action
 
     def select_action(self, s_t, decay_epsilon=True):
+
+        # action = to_numpy(
+        #     self.actor(to_tensor(np.array([s_t])))
+        # ).squeeze(0)
+
         action = to_numpy(
-            self.actor(to_tensor(np.array([s_t])))
+            self.actor(to_tensor(np.array([s_t])))[0]
         ).squeeze(0)
+
         action += self.is_training * max(self.epsilon, 0) * self.random_process.sample()
         action = np.clip(action, -1., 1.)
 
