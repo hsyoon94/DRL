@@ -81,11 +81,10 @@ class ReLU(nn.Module):
         pdf = normpdf(div)
         cdf = normcdf(div)
         outputs_mean = features_mean * cdf + features_stddev * pdf
-        outputs_variance = (features_mean ** 2 + features_variance) * cdf \
-                           + features_mean * features_stddev * pdf - outputs_mean ** 2
+        outputs_variance = (features_mean ** 2 + features_variance) * cdf + features_mean * features_stddev * pdf - outputs_mean ** 2
         if self._keep_variance_fn is not None:
             outputs_variance = self._keep_variance_fn(outputs_variance)
-        return torch.clamp(outputs_mean, min=-10e5, max=10e5), torch.clamp(outputs_variance, min=-10e5, max=10e5)
+        return torch.clamp(outputs_mean, min=-1e5, max=1e5), torch.clamp(outputs_variance, min=-1e5, max=1e5)
 
 
 class LeakyReLU(nn.Module):
@@ -208,7 +207,7 @@ class Linear(nn.Module):
         if self._keep_variance_fn is not None:
             outputs_variance = self._keep_variance_fn(outputs_variance)
 
-        return torch.clamp(outputs_mean, min=-10e5,max=10e5), torch.clamp(outputs_variance,min=-10e5, max=10e5)
+        return torch.clamp(outputs_mean, min=-1e5,max=1e5), torch.clamp(outputs_variance,min=-1e5, max=1e5)
 
 class BatchNorm2d(nn.Module):
     _version = 2

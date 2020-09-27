@@ -74,12 +74,12 @@ class UAActor(nn.Module):
     def __init__(self, nb_states, nb_actions, hidden1=400, hidden2=300, init_w=3e-3):
         super(UAActor, self).__init__()
 
-        self.min_variance = 1e-3
+        self.min_variance = 1
 
         self.keep_variance_fn = lambda x: keep_variance(x, min_variance=self.min_variance)
-        self._noise_variance = 1e-3
-        self.dropout_p = 0.2
-        self.dropout_n = 3
+        self._noise_variance = 1
+        self.dropout_p = 0.1
+        self.dropout_n = 1
 
         self.linear1 = adf.Linear(nb_states, hidden1, keep_variance_fn=self.keep_variance_fn)
         self.linear2 = adf.Linear(hidden1, hidden2, keep_variance_fn=self.keep_variance_fn)
@@ -103,18 +103,17 @@ class UAActor(nn.Module):
         inputs_mean_nor = (inputs_mean - torch.min(inputs_mean)) / (torch.max(inputs_mean)- torch.min(inputs_mean))
 
         tmp_input = inputs_mean_nor+0.1, inputs_var
-        for i in range(self.dropout_n):
-            out = self.linear1(*tmp_input)
-            out = self.ReLU(*out)
+        for _ in range(self.dropout_n):
 
+            out = self.linear1(*tmp_input)
+
+            out = self.ReLU(*out)
             out = self.dropout(*out)
             out = self.linear2(*out)
 
             out = self.ReLU(*out)
             out = self.dropout(*out)
             out = self.linear3(*out)
-
-            print("plr", i, out[0], out[1])
 
         return out
 

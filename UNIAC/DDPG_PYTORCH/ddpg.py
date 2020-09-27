@@ -19,7 +19,7 @@ criterion = nn.MSELoss()
 
 class DDPG(object):
     def __init__(self, nb_states, nb_actions, args):
-
+        print("DDPG!!!!!!!!!!!!!!!!!!!!!!!!!")
         if args.seed > 0:
             self.seed(args.seed)
 
@@ -35,7 +35,7 @@ class DDPG(object):
         }
         self.actor = UAActor(self.nb_states, self.nb_actions, **net_cfg)
 
-        self.actor_target = Actor(self.nb_states, self.nb_actions, **net_cfg)
+        self.actor_target = UAActor(self.nb_states, self.nb_actions, **net_cfg)
         self.actor_optim = Adam(self.actor.parameters(), lr=args.prate)
 
         self.critic = Critic(self.nb_states, self.nb_actions, **net_cfg)
@@ -73,14 +73,13 @@ class DDPG(object):
 
         # print("input x in xs", to_tensor(next_state_batch, volatile=True))
         # print("input s in xs", self.actor_target(to_tensor(next_state_batch, volatile=True)))
+        with torch.no_grad():
+            next_q_values = self.critic_target([
+                to_tensor(next_state_batch, volatile=True), self.actor_target(to_tensor(next_state_batch, volatile=True)),
+            ])
 
-        next_q_values = self.critic_target([
-            to_tensor(next_state_batch, volatile=True), self.actor_target(to_tensor(next_state_batch, volatile=True)),
-        ])
-        next_q_values.volatile = False
 
-        target_q_batch = to_tensor(reward_batch) + \
-                         self.discount * to_tensor(terminal_batch.astype(np.float)) * next_q_values
+        target_q_batch = to_tensor(reward_batch) + self.discount * to_tensor(terminal_batch.astype(np.float)) * next_q_values
 
         # Critic update
         self.critic.zero_grad()
