@@ -50,13 +50,13 @@ def train(num_iterations, agent, env,  evaluate, validate_steps, output, reward_
 
         evaluate = None
         # [optional] evaluate
-        if evaluate is not None and validate_steps > 0 and step % validate_steps == 0:
-            # policy = lambda x: agent.select_action_with_dropout(x, decay_epsilon=False)
-            policy = lambda x: agent.select_action(x, decay_epsilon=False)
-            validate_reward = evaluate(env, policy, debug=False, visualize=False)
+        # if evaluate is not None and validate_steps > 0 and step % validate_steps == 0:
+        #     # policy = lambda x: agent.select_action_with_dropout(x, decay_epsilon=False)
+        #     policy = lambda x: agent.select_action(x, decay_epsilon=False)
+        #     validate_reward = evaluate(env, policy, debug=False, visualize=False)
 
-            if debug:
-                prYellow('[Evaluate] Step_{:07d}: mean_reward:{}'.format(step, validate_reward))
+            # if debug:
+            #     prYellow('[Evaluate] Step_{:07d}: mean_reward:{}'.format(step, validate_reward))
 
         # [optional] save intermideate model
         # if step % int(num_iterations/300) == 0:

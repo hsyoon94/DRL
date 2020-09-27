@@ -128,21 +128,23 @@ class Dropout(nn.Module):
         self.p = p
 
     def forward(self, inputs_mean, inputs_variance):
+
         if self.training:
+
             binary_mask = torch.ones_like(inputs_mean)
-            binary_mask = F.dropout2d(binary_mask, self.p, self.training, self.inplace)
-            
+            binary_mask = F.dropout(binary_mask, self.p, self.training, self.inplace)
+
             outputs_mean = inputs_mean*binary_mask
             outputs_variance = inputs_variance*binary_mask**2
             
             if self._keep_variance_fn is not None:
                 outputs_variance = self._keep_variance_fn(outputs_variance)
-            return torch.clamp(outputs_mean, min=-10e5, max=10e5), torch.clamp(outputs_variance, min=-10e5, max=10e5)
+            return torch.clamp(outputs_mean, min=-1e5, max=1e5), torch.clamp(outputs_variance, min=-1e5, max=1e5)
         
         outputs_variance = inputs_variance
         if self._keep_variance_fn is not None:
             outputs_variance = self._keep_variance_fn(outputs_variance)
-        return torch.clam(inputs_mean, min=-10e5, max=10e5), torch.clamp(outputs_variance, min=-10e5, max=10e5)
+        return torch.clam(inputs_mean, min=-1e5, max=1e5), torch.clamp(outputs_variance, min=-1e5, max=1e5)
 
 
 class MaxPool2d(nn.Module):
@@ -194,13 +196,16 @@ class Linear(nn.Module):
         self._keep_variance_fn = keep_variance_fn
         self.in_features = in_features
         self.out_features = out_features
-        self.weight = Parameter(torch.Tensor(out_features, in_features))
+        # self.weight = Parameter(torch.Tensor(out_features, in_features))
+        self.weight = Parameter(torch.randn(out_features, in_features))
         if bias:
-            self.bias = Parameter(torch.Tensor(out_features))
+            # self.bias = Parameter(torch.Tensor(out_features))
+            self.bias = Parameter(torch.randn(out_features))
         else:
             self.register_parameter('bias', None)
 
     def forward(self, inputs_mean, inputs_variance):
+
         outputs_mean = F.linear(inputs_mean, self.weight, self.bias)
 
         outputs_variance = F.linear(inputs_variance, self.weight**2, None)
@@ -224,15 +229,19 @@ class BatchNorm2d(nn.Module):
         self.affine = affine
         self.track_running_stats = track_running_stats
         if self.affine:
-            self.weight = Parameter(torch.Tensor(num_features))
-            self.bias = Parameter(torch.Tensor(num_features))
+            # self.weight = Parameter(torch.Tensor(num_features))
+            # self.bias = Parameter(torch.Tensor(num_features))
+
+            self.weight = Parameter(torch.randn(num_features))
+            self.bias = Parameter(torch.randn(num_features))
         else:
             self.register_parameter('weight', None)
             self.register_parameter('bias', None)
         if self.track_running_stats:
             self.register_buffer('running_mean', torch.zeros(num_features))
             self.register_buffer('running_var', torch.ones(num_features))
-            self.register_buffer('num_batches_tracked', torch.tensor(0, dtype=torch.long))
+            # self.register_buffer('num_batches_tracked', torch.tensor(0, dtype=torch.long))
+            self.register_buffer('num_batches_tracked', torch.randn(0, dtype=torch.long))
         else:
             self.register_parameter('running_mean', None)
             self.register_parameter('running_var', None)
