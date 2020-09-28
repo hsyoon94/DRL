@@ -9,7 +9,7 @@ import numpy as np
 
 # This is to be understood as a transition: Given `state0`, performing `action`
 # yields `reward` and results in `state1`, which might be `terminal`.
-Experience = namedtuple('Experience', 'state0, action, reward, state1, terminal1')
+Experience = namedtuple('Experience', 'state0, action_mean, action_var, reward, state1, terminal1')
 
 
 def sample_batch_indexes(low, high, size):
@@ -84,7 +84,7 @@ class Memory(object):
     def sample(self, batch_size, batch_idxs=None):
         raise NotImplementedError()
 
-    def append(self, observation, action, reward, terminal, training=True):
+    def append(self, observation, action_mean, action_var, reward, terminal, training=True):
         self.recent_observations.append(observation)
         self.recent_terminals.append(terminal)
 
@@ -121,7 +121,8 @@ class SequentialMemory(Memory):
 
         # Do not use deque to implement the memory. This data structure may seem convenient but
         # it is way too slow on random access. Instead, we use our own ring buffer implementation.
-        self.actions = RingBuffer(limit)
+        self.actions_mean = RingBuffer(limit)
+        self.actions_var = RingBuffer(limit)
         self.rewards = RingBuffer(limit)
         self.terminals = RingBuffer(limit)
         self.observations = RingBuffer(limit)
@@ -162,7 +163,8 @@ class SequentialMemory(Memory):
                 state0.insert(0, self.observations[current_idx])
             while len(state0) < self.window_length:
                 state0.insert(0, zeroed_observation(state0[0]))
-            action = self.actions[idx - 1]
+            action_mean = self.actions_mean[idx - 1]
+            action_var = self.actions_var[idx - 1]
             reward = self.rewards[idx - 1]
             terminal1 = self.terminals[idx - 1]
 
@@ -174,8 +176,7 @@ class SequentialMemory(Memory):
 
             assert len(state0) == self.window_length
             assert len(state1) == len(state0)
-            experiences.append(Experience(state0=state0, action=action, reward=reward,
-                                          state1=state1, terminal1=terminal1))
+            experiences.append(Experience(state0=state0, action_mean=action_mean, action_var=action_var, reward=reward, state1=state1, terminal1=terminal1))
         assert len(experiences) == batch_size
         return experiences
 
@@ -184,14 +185,16 @@ class SequentialMemory(Memory):
 
         state0_batch = []
         reward_batch = []
-        action_batch = []
+        action_mean_batch = []
+        action_var_batch = []
         terminal1_batch = []
         state1_batch = []
         for e in experiences:
             state0_batch.append(e.state0)
             state1_batch.append(e.state1)
             reward_batch.append(e.reward)
-            action_batch.append(e.action)
+            action_mean_batch.append(e.action_mean)
+            action_var_batch.append(e.action_var)
             terminal1_batch.append(0. if e.terminal1 else 1.)
 
         # Prepare and validate parameters.
@@ -199,19 +202,20 @@ class SequentialMemory(Memory):
         state1_batch = np.array(state1_batch).reshape(batch_size,-1)
         terminal1_batch = np.array(terminal1_batch).reshape(batch_size,-1)
         reward_batch = np.array(reward_batch).reshape(batch_size,-1)
-        action_batch = np.array(action_batch).reshape(batch_size,-1)
+        action_mean_batch = np.array(action_mean_batch).reshape(batch_size,-1)
+        action_var_batch = np.array(action_var_batch).reshape(batch_size, -1)
+        return state0_batch, action_mean_batch, action_var_batch, reward_batch, state1_batch, terminal1_batch
 
-        return state0_batch, action_batch, reward_batch, state1_batch, terminal1_batch
 
-
-    def append(self, observation, action, reward, terminal, training=True):
-        super(SequentialMemory, self).append(observation, action, reward, terminal, training=training)
+    def append(self, observation, action_mean, action_var, reward, terminal, training=True):
+        super(SequentialMemory, self).append(observation, action_mean, action_var, reward, terminal, training=training)
         
         # This needs to be understood as follows: in `observation`, take `action`, obtain `reward`
         # and weather the next state is `terminal` or not.
         if training:
             self.observations.append(observation)
-            self.actions.append(action)
+            self.actions_mean.append(action_mean)
+            self.actions_var.append(action_var)
             self.rewards.append(reward)
             self.terminals.append(terminal)
 
@@ -246,8 +250,8 @@ class EpisodeParameterMemory(Memory):
             batch_total_rewards.append(self.total_rewards[idx])
         return batch_params, batch_total_rewards
 
-    def append(self, observation, action, reward, terminal, training=True):
-        super(EpisodeParameterMemory, self).append(observation, action, reward, terminal, training=training)
+    def append(self, observation, action_mean, action_var, reward, terminal, training=True):
+        super(EpisodeParameterMemory, self).append(observation, action_mean, action_var, reward, terminal, training=training)
         if training:
             self.intermediate_rewards.append(reward)
 

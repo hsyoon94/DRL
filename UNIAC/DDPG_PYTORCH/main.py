@@ -9,11 +9,11 @@ import os
 
 from normalized_env import NormalizedEnv
 from evaluator import Evaluator
-from ddpg import DDPG
+from uaddpg import UADDPG
 from util import *
 from datetime import datetime
 
-
+torch.autograd.set_detect_anomaly(True)
 
 def train(num_iterations, agent, env,  evaluate, validate_steps, output, reward_save_dir, max_episode_length=None, debug=False):
 
@@ -114,8 +114,8 @@ if __name__ == "__main__":
     parser.add_argument('--env', default='Pendulum-v0', type=str, help='open-ai gym environment')
     parser.add_argument('--hidden1', default=300, type=int, help='hidden num of first fully connect layer')
     parser.add_argument('--hidden2', default=300, type=int, help='hidden num of second fully connect layer')
-    parser.add_argument('--rate', default=0.001, type=float, help='learning rate')
-    parser.add_argument('--prate', default=0.0001, type=float, help='policy net learning rate (only for DDPG)')
+    parser.add_argument('--rate', default=0.00001, type=float, help='learning rate')
+    parser.add_argument('--prate', default=0.00001, type=float, help='policy net learning rate (only for DDPG)')
     parser.add_argument('--warmup', default=100, type=int, help='time without training but only filling the replay memory')
     parser.add_argument('--discount', default=0.99, type=float, help='')
     parser.add_argument('--bsize', default=64, type=int, help='minibatch size')
@@ -174,7 +174,7 @@ if __name__ == "__main__":
     nb_states = env.observation_space.shape[0]
     nb_actions = env.action_space.shape[0]
 
-    agent = DDPG(nb_states, nb_actions, args)
+    agent = UADDPG(nb_states, nb_actions, args)
 
     evaluate = Evaluator(args.validate_episodes, args.validate_steps, model_output, max_episode_length=args.max_episode_length)
 
