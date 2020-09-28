@@ -23,7 +23,7 @@ def train(num_iterations, agent, env,  evaluate, validate_steps, output, reward_
     observation = None
 
     while step < num_iterations:
-        env.render()
+        # env.render()
         # reset if it is the start of episode
         if observation is None:
             observation = deepcopy(env.reset())
