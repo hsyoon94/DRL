@@ -23,7 +23,8 @@ now_time = str(now.hour).zfill(2) + str(now.minute).zfill(2)
 # from ipdb import set_trace as debug
 
 def keep_variance(x, min_variance):
-    return x + min_variance
+    # return x + min_variance
+    return min_variance
 
 def KLDLoss(mean1, var1, mean2, var2):
     kld1 = torch.log((torch.sqrt(torch.abs(var2) + 1e-16))/(torch.sqrt(torch.abs(var1)) + 1e-16)) + (torch.abs(var1) + (mean1 - mean2)**2)/(2 * torch.abs(var2) + 1e-16)
@@ -174,7 +175,7 @@ class UADDPG(object):
         action_mean, action_var = self.actor(to_tensor(state_batch), to_tensor(state_noise_batch))
 
         policy_loss_mean, policy_loss_var = self.critic(to_tensor(state_batch), to_tensor(state_noise_batch), action_mean, action_var)
-        policy_loss_mean = -policy_loss_mean
+        # policy_loss_mean = -policy_loss_mean
 
         if self.critic_case == 'stochastic':
             # policy_loss = policy_loss_mean.mean() + policy_loss_var.mean()
@@ -218,17 +219,13 @@ class UADDPG(object):
 
     def select_action(self, s_t, s_t_noise, decay_epsilon=True):
         action_mean, action_var = self.actor(to_tensor(np.array([s_t])), to_tensor(np.array([s_t_noise])))
-        # TODO: Variance is raw output value now however, it should varied to (0.1)^output_var
-        # action_var = to_numpy(self.actor(to_tensor(np.array([s_t])))[1]).squeeze(0)
-
-        # for var in action_var:
-        #     var = math.pow(0.1, var)
 
         action_noise = []
 
-        amplification = 10000 - self.total_training_step / 100
-        if amplification < 1:
-            amplification = 1
+        # amplification = 10000 - self.total_training_step / 100
+        # if amplification < 1:
+        #     amplification = 1
+        amplification = 1
 
         for index in range(action_mean.shape[0]):
             action_noise.append(np.random.normal(0, action_var.cpu()[index] * amplification, 1))

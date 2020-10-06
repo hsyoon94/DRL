@@ -4,17 +4,18 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from contrib import adf
-
+import math
 
 def fanin_init(size, fanin=None):
     fanin = fanin or size[0]
-    v = 1. / np.sqrt(fanin)
+    v = 10. / np.sqrt(fanin)
+    # print("v", v)
     return torch.Tensor(size).uniform_(-v, v)
 
 
 def keep_variance(x, min_variance):
-    return x + min_variance
-
+    # return x + min_variance
+    return x
 
 class UAActor(nn.Module):
     def __init__(self, nb_states, nb_actions, is_target = True, hidden1=400, hidden2=300, init_w=3e-3):
@@ -71,24 +72,46 @@ class UAActor(nn.Module):
                 sampled_output_mean.append(out[0].squeeze())
                 sampled_output_var.append(out[1].squeeze())
 
-        for i in range(len(sampled_output_mean)):
-            sampled_output_mean[i] = sampled_output_mean[i].cpu().detach().numpy()
-            sampled_output_var[i] = sampled_output_var[i].cpu().detach().numpy()
+        for i1 in range(len(sampled_output_mean)):
+            sampled_output_mean[i1] = sampled_output_mean[i1].cpu().detach().numpy()
+            sampled_output_var[i1] = sampled_output_var[i1].cpu().detach().numpy()
 
-        np_sampled_output_mean = torch.mean(torch.tensor(sampled_output_mean), axis = 0).cuda()
+        try:
+            np_sampled_output_mean = torch.mean(torch.tensor(sampled_output_mean), axis = 0).cuda()
+
+        except TypeError:
+            for i_tmp in range(len(sampled_output_mean)):
+                sampled_output_mean[i_tmp] = [sampled_output_mean[i_tmp].tolist()]
+
+            sampled_output_mean = np.array(sampled_output_mean)
+            np_sampled_output_mean = torch.mean(torch.tensor(sampled_output_mean), axis=0).cuda()
 
         mean_var = []
 
-        for i in range(len(sampled_output_mean)):
+        for i2 in range(len(sampled_output_mean)):
             tmp_mean_var = []
             for j in range(np_sampled_output_mean.shape[0]):
-                tmp_mean_var.append( (np_sampled_output_mean[j].cpu().numpy() - sampled_output_mean[i][j]) ** 2)
+                tmp_mean_var.append( (np_sampled_output_mean[j].cpu().numpy() - sampled_output_mean[i2][j]) ** 2)
 
             mean_var.append(tmp_mean_var)
 
         np_sampled_output_var = torch.mean(torch.tensor(sampled_output_var), axis=0) + torch.mean(torch.tensor(mean_var), axis=0)
+
         if self.is_target is False:
             self.action_count = self.action_count + 1
+
+        if np_sampled_output_var.shape[0]!=64 :
+            for i3 in range(len(np_sampled_output_var)):
+                # print("var", np_sampled_output_var[i3])
+                try:
+                    np_sampled_output_var[i3] = math.pow(10, np_sampled_output_var[i3])
+                except RuntimeError:
+                    print(np_sampled_output_var[i3])
+
+        else:
+            for i3 in range(np_sampled_output_var.shape[0]):
+                for j3 in range(len(np_sampled_output_var[i3])):
+                    np_sampled_output_var[i3][j3] = math.pow(10, np_sampled_output_var[i3][j3])
 
         return np_sampled_output_mean.cuda(), np_sampled_output_var.cuda()
 
@@ -165,6 +188,15 @@ class UACritic(nn.Module):
             mean_var.append(tmp_mean_var)
 
         np_sampled_output_var = torch.mean(torch.tensor(sampled_output_var), axis=0) + torch.mean(torch.tensor(mean_var), axis=0)
+
+        if np_sampled_output_var.shape[0] != 64:
+            for i3 in range(len(np_sampled_output_var)):
+                np_sampled_output_var[i3] = math.pow(10, np_sampled_output_var[i3])
+
+        else:
+            for i3 in range(np_sampled_output_var.shape[0]):
+                for j3 in range(len(np_sampled_output_var[i3])):
+                    np_sampled_output_var[i3][j3] = math.pow(10, np_sampled_output_var[i3][j3])
 
         return np_sampled_output_mean.cuda(), np_sampled_output_var.cuda()
 
