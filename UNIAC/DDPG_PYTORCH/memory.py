@@ -9,7 +9,7 @@ import numpy as np
 
 # This is to be understood as a transition: Given `state0`, performing `action`
 # yields `reward` and results in `state1`, which might be `terminal`.
-Experience = namedtuple('Experience', 'state0, action_mean, action_var, reward, state1, terminal1')
+Experience = namedtuple('Experience', 'state0, state0_noise, action_mean, action_var, reward, state1, state1_noise, terminal1')
 
 
 def sample_batch_indexes(low, high, size):
@@ -126,6 +126,7 @@ class SequentialMemory(Memory):
         self.rewards = RingBuffer(limit)
         self.terminals = RingBuffer(limit)
         self.observations = RingBuffer(limit)
+        self.observations_noise = RingBuffer(limit)
 
     def sample(self, batch_size, batch_idxs=None):
         if batch_idxs is None:
@@ -153,6 +154,7 @@ class SequentialMemory(Memory):
             # from different episodes. We ensure that an experience never spans multiple episodes.
             # This is probably not that important in practice but it seems cleaner.
             state0 = [self.observations[idx - 1]]
+            state0_noise = [self.observations_noise[idx - 1]]
             for offset in range(0, self.window_length - 1):
                 current_idx = idx - 2 - offset
                 current_terminal = self.terminals[current_idx - 1] if current_idx - 1 > 0 else False
@@ -161,6 +163,7 @@ class SequentialMemory(Memory):
                     # Otherwise we would leak into a different episode.
                     break
                 state0.insert(0, self.observations[current_idx])
+                state0_noise.insert(0, self.observations_noise[current_idx])
             while len(state0) < self.window_length:
                 state0.insert(0, zeroed_observation(state0[0]))
             action_mean = self.actions_mean[idx - 1]
@@ -172,11 +175,13 @@ class SequentialMemory(Memory):
             # to the right. Again, we need to be careful to not include an observation from the next
             # episode if the last state is terminal.
             state1 = [np.copy(x) for x in state0[1:]]
+            state1_noise = [np.copy(x) for x in state0_noise[1:]]
             state1.append(self.observations[idx])
+            state1_noise.append(self.observations_noise[idx])
 
             assert len(state0) == self.window_length
             assert len(state1) == len(state0)
-            experiences.append(Experience(state0=state0, action_mean=action_mean, action_var=action_var, reward=reward, state1=state1, terminal1=terminal1))
+            experiences.append(Experience(state0=state0, state0_noise=state0_noise, action_mean=action_mean, action_var=action_var, reward=reward, state1=state1, state1_noise=state1_noise, terminal1=terminal1))
         assert len(experiences) == batch_size
         return experiences
 
@@ -184,14 +189,18 @@ class SequentialMemory(Memory):
         experiences = self.sample(batch_size, batch_idxs)
 
         state0_batch = []
+        state0_noise_batch = []
         reward_batch = []
         action_mean_batch = []
         action_var_batch = []
         terminal1_batch = []
         state1_batch = []
+        state1_noise_batch = []
         for e in experiences:
             state0_batch.append(e.state0)
+            state0_noise_batch.append(e.state0_noise)
             state1_batch.append(e.state1)
+            state1_noise_batch.append(e.state1_noise)
             reward_batch.append(e.reward)
             action_mean_batch.append(e.action_mean)
             action_var_batch.append(e.action_var)
@@ -199,21 +208,25 @@ class SequentialMemory(Memory):
 
         # Prepare and validate parameters.
         state0_batch = np.array(state0_batch).reshape(batch_size,-1)
+        state0_noise_batch = np.array(state0_noise_batch).reshape(batch_size,-1)
         state1_batch = np.array(state1_batch).reshape(batch_size,-1)
+        state1_noise_batch = np.array(state1_noise_batch).reshape(batch_size,-1)
+
         terminal1_batch = np.array(terminal1_batch).reshape(batch_size,-1)
         reward_batch = np.array(reward_batch).reshape(batch_size,-1)
         action_mean_batch = np.array(action_mean_batch).reshape(batch_size,-1)
         action_var_batch = np.array(action_var_batch).reshape(batch_size, -1)
-        return state0_batch, action_mean_batch, action_var_batch, reward_batch, state1_batch, terminal1_batch
+        return state0_batch, state0_noise_batch, action_mean_batch, action_var_batch, reward_batch, state1_batch, state1_noise_batch, terminal1_batch
 
 
-    def append(self, observation, action_mean, action_var, reward, terminal, training=True):
+    def append(self, observation, observations_noise, action_mean, action_var, reward, terminal, training=True):
         super(SequentialMemory, self).append(observation, action_mean, action_var, reward, terminal, training=training)
         
         # This needs to be understood as follows: in `observation`, take `action`, obtain `reward`
         # and weather the next state is `terminal` or not.
         if training:
             self.observations.append(observation)
+            self.observations_noise.append(observations_noise)
             self.actions_mean.append(action_mean)
             self.actions_var.append(action_var)
             self.rewards.append(reward)

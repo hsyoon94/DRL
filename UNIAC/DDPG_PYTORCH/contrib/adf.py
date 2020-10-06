@@ -205,13 +205,15 @@ class Linear(nn.Module):
             self.register_parameter('bias', None)
 
     def forward(self, inputs_mean, inputs_variance):
-
         outputs_mean = F.linear(inputs_mean, self.weight, self.bias)
 
         # print("linear weight", self.weight)
         # print("linear bias", self.bias)
 
         outputs_variance = F.linear(inputs_variance, self.weight**2, None)
+
+        # print("outputs_variance", outputs_variance)
+
         if self._keep_variance_fn is not None:
             outputs_variance = self._keep_variance_fn(outputs_variance)
 

@@ -4,13 +4,13 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from contrib import adf
-print(adf.__file__)
 
 
 def fanin_init(size, fanin=None):
     fanin = fanin or size[0]
     v = 1. / np.sqrt(fanin)
     return torch.Tensor(size).uniform_(-v, v)
+
 
 def keep_variance(x, min_variance):
     return x + min_variance
@@ -25,8 +25,9 @@ class UAActor(nn.Module):
         self.keep_variance_fn = lambda x: keep_variance(x, min_variance=self.min_variance)
         self._noise_variance = 1e-4
         self.dropout_p = 0.1
-        self.dropout_n = 1
+        self.dropout_n = 3
         self.is_target = is_target
+        self.action_count = 0
 
         self.linear1 = adf.Linear(nb_states, hidden1, keep_variance_fn=self.keep_variance_fn)
         self.linear2 = adf.Linear(hidden1, hidden2, keep_variance_fn=self.keep_variance_fn)
@@ -44,33 +45,52 @@ class UAActor(nn.Module):
         self.linear3.weight.data.uniform_(-init_w, init_w)
 
 
-    def forward(self, x):
+    def forward(self, x, x_noise):
         inputs_mean = x
         inputs_var = torch.zeros_like(inputs_mean) + self._noise_variance
+        # inputs_var = x_noise
+        inputs_var = inputs_var + 2
 
         inputs_mean_nor = (inputs_mean - torch.min(inputs_mean)) / (torch.max(inputs_mean)- torch.min(inputs_mean))
 
         tmp_input = inputs_mean_nor+0.1, inputs_var
+        sampled_output_mean = []
+        sampled_output_var = []
 
-        for _ in range(self.dropout_n):
-            # print("input", tmp_input)
-            out = self.linear1(*tmp_input)
-            # print("linear1 out!", out)
-            out = self.ReLU(*out)
-            # print("relu1 out!", out)
-            out = self.dropout(*out)
-            # print("dropout1 out!", out)
-            out = self.linear2(*out)
-            # print("linear2 out!", out)
-            out = self.ReLU(*out)
-            # print("relu2 out!", out)
-            out = self.dropout(*out)
-            # print("dropout2 out!", out)
-            out = self.linear3(*out)
+        with torch.no_grad():
+            for _ in range(self.dropout_n):
 
-        # print("linear3!", out)
+                out = self.linear1(*tmp_input)
+                out = self.ReLU(*out)
+                out = self.dropout(*out)
+                out = self.linear2(*out)
+                out = self.ReLU(*out)
+                out = self.dropout(*out)
+                out = self.linear3(*out)
 
-        return out
+                sampled_output_mean.append(out[0].squeeze())
+                sampled_output_var.append(out[1].squeeze())
+
+        for i in range(len(sampled_output_mean)):
+            sampled_output_mean[i] = sampled_output_mean[i].cpu().detach().numpy()
+            sampled_output_var[i] = sampled_output_var[i].cpu().detach().numpy()
+
+        np_sampled_output_mean = torch.mean(torch.tensor(sampled_output_mean), axis = 0).cuda()
+
+        mean_var = []
+
+        for i in range(len(sampled_output_mean)):
+            tmp_mean_var = []
+            for j in range(np_sampled_output_mean.shape[0]):
+                tmp_mean_var.append( (np_sampled_output_mean[j].cpu().numpy() - sampled_output_mean[i][j]) ** 2)
+
+            mean_var.append(tmp_mean_var)
+
+        np_sampled_output_var = torch.mean(torch.tensor(sampled_output_var), axis=0) + torch.mean(torch.tensor(mean_var), axis=0)
+        if self.is_target is False:
+            self.action_count = self.action_count + 1
+
+        return np_sampled_output_mean.cuda(), np_sampled_output_var.cuda()
 
 
 class UACritic(nn.Module):
@@ -100,39 +120,59 @@ class UACritic(nn.Module):
         self.linear2.weight.data = fanin_init(self.linear2.weight.data.size())
         self.linear3.weight.data.uniform_(-init_w, init_w)
 
-    def forward(self, xs):
-        x, a_mean, a_var = xs
+    def forward(self, state, state_noise, action, action_uncertainty):
 
-        inputs_mean = x
+        inputs_mean = state
         inputs_var = torch.zeros_like(inputs_mean) + self._noise_variance
+        # inputs_var = state_noise
+        inputs_var = inputs_var + 2
 
         inputs_mean_nor = (inputs_mean - torch.min(inputs_mean)) / (torch.max(inputs_mean)- torch.min(inputs_mean))
 
         tmp_input = inputs_mean_nor+0.1, inputs_var
-        for _ in range(self.dropout_n):
-            # print("input", tmp_input)
-            out = self.linear1(*tmp_input)
-            # print("linear1", out)
-            out = self.ReLU(*out)
-            # print("relu1", out)
-            out = self.dropout(*out)
-            # print("dropout1", out)
-            new_input = self.input_concat(out, a_mean, a_var)
-            out = self.linear2(*new_input)
-            # print("linear2", out)
-            out = self.ReLU(*out)
-            # print("relu2", out)
-            out = self.dropout(*out)
-            # print("dropout2", out)
-            out = self.linear3(*out)
-            # print("linear3", out)
 
-        return out
+        sampled_output_mean = []
+        sampled_output_var = []
+
+        with torch.no_grad():
+            for _ in range(self.dropout_n):
+                out = self.linear1(*tmp_input)
+                out = self.ReLU(*out)
+                out = self.dropout(*out)
+                new_input = self.input_concat(out, action.cuda(), action_uncertainty.cuda())
+                out = self.linear2(*new_input)
+                out = self.ReLU(*out)
+                out = self.dropout(*out)
+                out = self.linear3(*out)
+
+                sampled_output_mean.append(out[0])
+                sampled_output_var.append(out[1])
+
+        for i in range(len(sampled_output_mean)):
+            sampled_output_mean[i] = sampled_output_mean[i].cpu().detach().numpy()
+            sampled_output_var[i] = sampled_output_var[i].cpu().detach().numpy()
+
+
+        np_sampled_output_mean = torch.mean(torch.tensor(sampled_output_mean), axis = 0).cuda()
+
+        mean_var = []
+
+        for i in range(len(sampled_output_mean)):
+            tmp_mean_var = []
+            for j in range(np_sampled_output_mean.shape[0]):
+                tmp_mean_var.append( (np_sampled_output_mean[j].cpu().numpy() - sampled_output_mean[i][j]) ** 2)
+
+            mean_var.append(tmp_mean_var)
+
+        np_sampled_output_var = torch.mean(torch.tensor(sampled_output_var), axis=0) + torch.mean(torch.tensor(mean_var), axis=0)
+
+        return np_sampled_output_mean.cuda(), np_sampled_output_var.cuda()
+
 
     def input_concat(self, state, action_mean, action_var):
-
-        # return torch.from_numpy(np.concatenate((state[0].cpu().numpy(), action_mean.cpu().numpy()), 1)).cuda(), torch.from_numpy(np.concatenate((state[0].cpu().numpy(), action_var.cpu().numpy()), 1)).cuda()
         return torch.cat((state[0], action_mean), 1), torch.cat((state[0], action_var), 1)
+
+
 
 # class Actor(nn.Module):
 #     def __init__(self, nb_states, nb_actions, hidden1=400, hidden2=300, init_w=3e-3):
